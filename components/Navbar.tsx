@@ -4,7 +4,7 @@ import { NAV_LINKS } from '../constants';
 
 const Navbar: React.FC = () => {
   return (
-    <nav className="sticky top-0 z-50 w-full bg-background/80 backdrop-blur-md border-b border-white/5 px-6 lg:px-12 py-4 flex items-center justify-between">
+    <nav className="sticky top-0 z-50 w-full bg-background/85 backdrop-blur-lg border-b border-white/10 px-6 lg:px-12 py-4 flex items-center justify-between shadow-lg shadow-black/20">
       <div className="flex items-center gap-2 group cursor-pointer">
         <div className="w-8 h-8 bg-primary rounded-sm flex items-center justify-center transform transition-transform group-hover:rotate-12">
            <svg className="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 24 24">

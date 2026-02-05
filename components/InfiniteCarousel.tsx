@@ -54,6 +54,15 @@ const InfiniteCarousel: React.FC = () => {
   // Triple the items to ensure seamless scrolling on large screens
   const tripledItems = [...items, ...items, ...items];
 
+  // 카드 하나당 시간을 고정하여 카드 개수에 비례하게 애니메이션 시간 계산
+  const TIME_PER_CARD = 0.5; // 카드 1개당 0.5초
+  // -50% 이동 = 원본 items의 1.5배 이동
+  // 원본 1세트 시간 = items.length * TIME_PER_CARD
+  // -50% 이동 시간 = 원본 1세트 시간 * 1.5
+  const animationDuration = items.length > 0 
+    ? items.length * TIME_PER_CARD * 1.5
+    : 40; // 기본값
+
   if (loading) {
     return (
       <section className="w-full py-16 overflow-hidden">
@@ -85,9 +94,14 @@ const InfiniteCarousel: React.FC = () => {
   }
 
   return (
-    <section className="w-full py-16 overflow-hidden">
+    <section className="relative w-full py-16 overflow-hidden">
+      {/* 캐러셀 섹션 전용 오버레이 - 배경 이미지와의 자연스러운 조화 */}
+      <div className="absolute inset-0 bg-gradient-to-b from-transparent via-background/40 to-transparent pointer-events-none" />
+      
+      {/* 콘텐츠를 오버레이 위에 배치 */}
+      <div className="relative z-10">
       <div className="flex flex-col items-center mb-12">
-        <span className="bg-primary/10 text-primary text-[10px] font-bold tracking-[0.2em] uppercase py-1 px-4 rounded-full border border-primary/20 mb-4">
+        <span className="bg-primary/10 backdrop-blur-sm text-primary text-[10px] font-bold tracking-[0.2em] uppercase py-1 px-4 rounded-full border border-primary/20 mb-4">
           Explore the Archive
         </span>
       </div>
@@ -97,7 +111,12 @@ const InfiniteCarousel: React.FC = () => {
         <div className="absolute left-0 top-0 bottom-0 w-32 bg-gradient-to-r from-background to-transparent z-10 hidden lg:block" />
         <div className="absolute right-0 top-0 bottom-0 w-32 bg-gradient-to-l from-background to-transparent z-10 hidden lg:block" />
 
-        <div className="flex animate-infinite-scroll w-max gap-6 px-6">
+        <div 
+          className="flex w-max gap-6 px-6"
+          style={{
+            animation: `infinite-scroll ${animationDuration}s linear infinite`,
+          }}
+        >
           {tripledItems.map((item, idx) => (
             <div
               key={`${item.id}-${idx}`}
@@ -123,6 +142,7 @@ const InfiniteCarousel: React.FC = () => {
             </div>
           ))}
         </div>
+      </div>
       </div>
     </section>
   );
