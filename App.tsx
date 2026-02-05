@@ -36,14 +36,14 @@ const App: React.FC = () => {
           backgroundAttachment: 'fixed',
         }}
       >
-        {/* 어두운 오버레이 - 전체 배경을 약간 어둡게 */}
-        <div className="absolute inset-0 bg-background/70" />
+        {/* 어두운 오버레이 - 전체 배경을 약간 어둡게 (투명도 감소) */}
+        <div className="absolute inset-0 bg-background/30" />
         
-        {/* 그라데이션 오버레이 - 상단과 하단을 더 어둡게 */}
-        <div className="absolute inset-0 bg-gradient-to-b from-background/90 via-background/60 to-background/90" />
+        {/* 그라데이션 오버레이 - 상단과 하단을 더 어둡게 (투명도 감소) */}
+        <div className="absolute inset-0 bg-gradient-to-b from-background/50 via-background/20 to-background/50" />
         
-        {/* 중앙 영역 보호 - 텍스트가 배치될 영역을 더 어둡게 */}
-        <div className="absolute inset-0 bg-gradient-to-r from-background/40 via-transparent to-background/40" />
+        {/* 중앙 영역 보호 - 텍스트가 배치될 영역을 더 어둡게 (투명도 감소) */}
+        <div className="absolute inset-0 bg-gradient-to-r from-background/20 via-transparent to-background/20" />
       </div>
 
       {/* 콘텐츠 레이어 */}

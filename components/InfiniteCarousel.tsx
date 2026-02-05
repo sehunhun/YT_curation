@@ -95,8 +95,8 @@ const InfiniteCarousel: React.FC = () => {
 
   return (
     <section className="relative w-full py-16 overflow-hidden">
-      {/* 캐러셀 섹션 전용 오버레이 - 배경 이미지와의 자연스러운 조화 */}
-      <div className="absolute inset-0 bg-gradient-to-b from-transparent via-background/40 to-transparent pointer-events-none" />
+      {/* 캐러셀 섹션 전용 오버레이 - 배경 이미지와의 자연스러운 조화 (투명도 감소) */}
+      <div className="absolute inset-0 bg-gradient-to-b from-transparent via-background/20 to-transparent pointer-events-none" />
       
       {/* 콘텐츠를 오버레이 위에 배치 */}
       <div className="relative z-10">

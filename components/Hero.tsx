@@ -3,12 +3,12 @@ import React from 'react';
 
 const Hero: React.FC = () => {
   return (
-    <section className="relative flex flex-col items-center text-center px-6 pt-20 pb-12 lg:pt-32 lg:pb-20 max-w-5xl mx-auto">
-      {/* Hero 섹션 전용 오버레이 - 텍스트 가독성 향상 */}
-      <div className="absolute inset-0 bg-gradient-to-b from-transparent via-background/30 to-transparent pointer-events-none" />
+    <section className="relative flex flex-col items-center justify-center text-center px-6 min-h-screen max-w-5xl mx-auto">
+      {/* Hero 섹션 전용 오버레이 - 텍스트 가독성 향상 (투명도 감소) */}
+      <div className="absolute inset-0 bg-gradient-to-b from-transparent via-background/15 to-transparent pointer-events-none" />
       
       {/* 콘텐츠를 오버레이 위에 배치 */}
-      <div className="relative z-10 w-full">
+      <div className="relative z-10 w-full flex flex-col items-center">
       {/* Label and Input */}
       <div className="w-full max-w-xl mb-16 space-y-6">
         <h5 className="text-gray-500 text-xs font-bold tracking-[0.3em] uppercase">
