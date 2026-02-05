@@ -1,0 +1,675 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>YouTube 채널 분석</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://apis.google.com/js/api.js"></script>
+  <style>
+    body {
+      background-color: #0d1317;
+      color: white;
+    }
+  </style>
+</head>
+<body>
+  <div class="container mx-auto px-4 py-8 max-w-7xl">
+    <h1 class="text-3xl font-bold mb-4">YouTube 채널 분석</h1>
+    <p class="text-gray-400 mb-6">
+      검색어 "부업"으로 채널을 검색하고, 구독자 수 2000 이상인 채널의 정보를 분석합니다.
+    </p>
+    
+    <div class="mb-6">
+      <label class="block text-sm font-medium mb-2">YouTube API Key:</label>
+      <input 
+        type="text" 
+        id="apiKey" 
+        placeholder="YouTube API Key를 입력하세요"
+        class="w-full px-4 py-2 bg-gray-800 text-white rounded-lg border border-gray-700 focus:border-blue-500 focus:outline-none mb-4"
+      />
+      <div class="flex items-center gap-4">
+        <label class="block text-sm font-medium">검색할 최대 채널 개수:</label>
+        <input 
+          type="number" 
+          id="maxResults" 
+          value="50"
+          min="1"
+          max="500"
+          class="w-24 px-4 py-2 bg-gray-800 text-white rounded-lg border border-gray-700 focus:border-blue-500 focus:outline-none"
+        />
+        <span class="text-sm text-gray-400">(한 번에 최대 50개씩 반환, 페이지네이션으로 최대 500개까지 가능)</span>
+      </div>
+    </div>
+    
+    <button 
+      id="analyzeBtn"
+      class="px-6 py-3 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors mb-6"
+    >
+      채널 분석 시작
+    </button>
+
+    <div id="status" class="mb-4 text-gray-400"></div>
+    <div id="error" class="mb-6 p-4 bg-red-500/20 border border-red-500/50 rounded-lg text-red-300 hidden"></div>
+    
+    <div id="downloadSection" class="mb-4 hidden">
+      <div class="flex items-center gap-4 mb-4">
+        <button 
+          id="downloadBtn"
+          class="px-6 py-3 bg-green-600 text-white rounded-lg font-semibold hover:bg-green-700 transition-colors"
+        >
+          📥 CSV로 다운로드
+        </button>
+        <div class="flex items-center gap-2">
+          <label class="text-sm font-medium">그래프 Bin 크기:</label>
+          <select 
+            id="binSize"
+            class="px-4 py-2 bg-gray-800 text-white rounded-lg border border-gray-700 focus:border-blue-500 focus:outline-none"
+          >
+            <option value="1">1일</option>
+            <option value="3" selected>3일</option>
+            <option value="5">5일</option>
+            <option value="7">7일</option>
+          </select>
+        </div>
+      </div>
+    </div>
+    
+    <div id="results" class="overflow-x-auto"></div>
+  </div>
+
+  <script type="module">
+    const MIN_SUBSCRIBER_COUNT = 2000;
+    const SEARCH_QUERY = '부업';
+    const MAX_SEARCH_RESULTS = 50; // 검색할 최대 채널 개수 기본값 (페이지네이션으로 더 많이 가져올 수 있음)
+    let currentChannels = []; // 현재 표시된 채널 데이터 저장
+
+    // Google API 클라이언트 초기화
+    function loadClient(apiKey) {
+      return new Promise((resolve, reject) => {
+        gapi.client.setApiKey(apiKey);
+        gapi.client
+          .load('https://www.googleapis.com/discovery/v1/apis/youtube/v3/rest')
+          .then(
+            () => {
+              console.log('GAPI client loaded');
+              resolve();
+            },
+            (err) => {
+              console.error('Error loading GAPI client', err);
+              reject(err);
+            }
+          );
+      });
+    }
+
+    // 채널 검색
+    async function searchChannels(query, maxResults = MAX_SEARCH_RESULTS) {
+      const allResults = [];
+      let nextPageToken;
+      let pageCount = 0;
+      let totalResults = null; // 루프 밖에서도 사용할 수 있도록 선언
+
+      do {
+        const response = await gapi.client.youtube.search.list({
+          part: ['snippet'],
+          q: query,
+          type: 'channel',
+          order: 'relevance', // 관련성 순으로 정렬하여 일관성 향상
+          maxResults: Math.min(maxResults - allResults.length, 50),
+          pageToken: nextPageToken,
+        });
+
+        pageCount++;
+        const itemsInPage = response.result.items ? response.result.items.length : 0;
+        totalResults = response.result.pageInfo?.totalResults || null; // 루프 밖에서도 사용 가능하도록 업데이트
+        const resultsPerPage = response.result.pageInfo?.resultsPerPage || '알 수 없음';
+        const requestedMaxResults = Math.min(maxResults - allResults.length, 50);
+        
+        // 응답에서 다음 페이지 토큰 가져오기
+        const currentNextPageToken = response.result.nextPageToken;
+        
+        if (response.result.items) {
+          allResults.push(...response.result.items);
+        }
+
+        // 다음 페이지 토큰 상태 분석
+        let nextPageStatus = '';
+        if (currentNextPageToken) {
+          const remaining = typeof totalResults === 'number' ? totalResults - allResults.length : '?';
+          nextPageStatus = `있음 (추가로 ${remaining}개 이상 가능)`;
+        } else {
+          if (typeof totalResults === 'number' && totalResults > allResults.length) {
+            nextPageStatus = `없음 ⚠️ (전체 ${totalResults}개 중 ${allResults.length}개만 수집됨 - API 제한 가능성)`;
+          } else {
+            nextPageStatus = `없음 (전체 ${allResults.length}개 수집 완료)`;
+          }
+        }
+        
+        console.log(`검색 페이지 ${pageCount}:`, {
+          요청한_개수: requestedMaxResults,
+          실제_반환된_개수: itemsInPage,
+          전체_예상_결과: totalResults || '알 수 없음',
+          페이지당_결과수: resultsPerPage,
+          다음페이지_토큰: nextPageStatus,
+          누적_결과수: allResults.length
+        });
+
+        nextPageToken = currentNextPageToken;
+        
+        // 페이지네이션 중단 조건: 더 이상 페이지가 없거나 원하는 개수에 도달
+        if (!nextPageToken || allResults.length >= maxResults) {
+          if (!nextPageToken) {
+            if (typeof totalResults === 'number' && totalResults > allResults.length) {
+              console.warn(`⚠️ 다음 페이지 토큰이 없지만 전체 예상 결과(${totalResults}개)보다 적은 ${allResults.length}개만 수집되었습니다.`);
+              console.warn('   가능한 원인:');
+              console.warn('   1. YouTube API가 해당 검색어에 대해 제한된 결과만 반환');
+              console.warn('   2. API 할당량 제한');
+              console.warn('   3. 검색 결과가 실시간으로 변경됨');
+              console.warn(`   4. YouTube API의 totalResults(${totalResults})와 실제 반환 가능한 결과가 다를 수 있음`);
+            } else {
+              console.log(`✅ 모든 결과를 수집했습니다. (총 ${allResults.length}개)`);
+            }
+          }
+          if (allResults.length >= maxResults) {
+            console.log(`✅ 요청한 최대 개수(${maxResults})에 도달하여 검색을 중단합니다.`);
+          }
+          break;
+        }
+      } while (allResults.length < maxResults);
+
+      console.log(`총 검색 결과: ${allResults.length}개 채널 (요청: ${maxResults}개, ${pageCount}페이지)`);
+      
+      if (allResults.length < maxResults && !nextPageToken) {
+        console.warn(`⚠️ 요청한 ${maxResults}개보다 적은 ${allResults.length}개만 반환되었습니다.`);
+        console.warn('   가능한 원인:');
+        console.warn('   1. YouTube API가 해당 검색어에 대해 더 적은 결과만 반환');
+        console.warn('   2. API 할당량 제한');
+        console.warn('   3. 검색 결과가 실시간으로 변경됨');
+        console.warn(`   4. 더 이상 가져올 페이지가 없음 (전체 결과: ${totalResults || '알 수 없음'}개)`);
+      } else if (allResults.length >= maxResults) {
+        console.log(`✅ 요청한 ${maxResults}개 모두 수집 완료!`);
+      }
+      
+      return allResults;
+    }
+
+    // 채널 상세 정보 조회
+    async function getChannelsDetails(channelIds) {
+      const allChannels = [];
+      const batchSize = 50;
+
+      for (let i = 0; i < channelIds.length; i += batchSize) {
+        const batch = channelIds.slice(i, i + batchSize);
+        const response = await gapi.client.youtube.channels.list({
+          part: ['snippet', 'statistics', 'contentDetails'],
+          id: batch,
+        });
+
+        if (response.result.items) {
+          allChannels.push(...response.result.items);
+        }
+      }
+
+      return allChannels;
+    }
+
+    // 채널의 업로드된 동영상 목록 조회
+    async function getChannelVideos(uploadsPlaylistId, maxResults = 10) {
+      const response = await gapi.client.youtube.playlistItems.list({
+        part: ['snippet'],
+        playlistId: uploadsPlaylistId,
+        maxResults: maxResults,
+      });
+
+      return response.result.items || [];
+    }
+
+    // 구독자 수 필터링
+    function filterChannelsBySubscriberCount(channels, minCount = MIN_SUBSCRIBER_COUNT) {
+      return channels.filter((channel) => {
+        const subscriberCount = parseInt(channel.statistics?.subscriberCount || '0', 10);
+        return subscriberCount >= minCount;
+      });
+    }
+
+    // 평균 업로드 주기 계산
+    function calculateAverageUploadInterval(videos) {
+      if (videos.length < 2) {
+        return null;
+      }
+
+      const sortedVideos = [...videos].sort((a, b) => {
+        const dateA = new Date(a.snippet.publishedAt).getTime();
+        const dateB = new Date(b.snippet.publishedAt).getTime();
+        return dateB - dateA;
+      });
+
+      const intervals = [];
+      for (let i = 0; i < sortedVideos.length - 1; i++) {
+        const date1 = new Date(sortedVideos[i].snippet.publishedAt).getTime();
+        const date2 = new Date(sortedVideos[i + 1].snippet.publishedAt).getTime();
+        const intervalDays = (date1 - date2) / (1000 * 60 * 60 * 24);
+        intervals.push(intervalDays);
+      }
+
+      const averageInterval = intervals.reduce((sum, interval) => sum + interval, 0) / intervals.length;
+      return Math.round(averageInterval * 10) / 10;
+    }
+
+    // 마지막 업로드일 조회
+    function getLastUploadDate(videos) {
+      if (videos.length === 0) {
+        return null;
+      }
+
+      const sortedVideos = [...videos].sort((a, b) => {
+        const dateA = new Date(a.snippet.publishedAt).getTime();
+        const dateB = new Date(b.snippet.publishedAt).getTime();
+        return dateB - dateA;
+      });
+
+      return sortedVideos[0].snippet.publishedAt;
+    }
+
+    // 채널 링크 생성
+    function getChannelLink(channel) {
+      const customUrl = channel.snippet?.customUrl;
+      if (customUrl) {
+        return `https://www.youtube.com/${customUrl}`;
+      }
+      return `https://www.youtube.com/channel/${channel.id}`;
+    }
+
+    // 채널 정보 변환
+    async function convertToChannelInfo(channel) {
+      const uploadsPlaylistId = channel.contentDetails?.relatedPlaylists?.uploads;
+
+      let lastUploadDate = null;
+      let averageUploadInterval = null;
+
+      if (uploadsPlaylistId) {
+        try {
+          const videos = await getChannelVideos(uploadsPlaylistId, 10);
+          lastUploadDate = getLastUploadDate(videos);
+          averageUploadInterval = calculateAverageUploadInterval(videos);
+        } catch (error) {
+          console.error(`Failed to get videos for channel ${channel.id}:`, error);
+        }
+      }
+
+      return {
+        id: channel.id,
+        title: channel.snippet.title,
+        subscriberCount: parseInt(channel.statistics.subscriberCount || '0', 10),
+        channelLink: getChannelLink(channel),
+        lastUploadDate,
+        averageUploadInterval,
+      };
+    }
+
+    // 날짜 포맷팅
+    function formatDate(dateString) {
+      if (!dateString) return '-';
+      const date = new Date(dateString);
+      return date.toLocaleDateString('ko-KR', {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+      });
+    }
+
+    // 구독자 수 포맷팅
+    function formatSubscriberCount(count) {
+      if (count >= 1000000) {
+        return `${(count / 1000000).toFixed(1)}M`;
+      }
+      if (count >= 1000) {
+        return `${(count / 1000).toFixed(1)}K`;
+      }
+      return count.toLocaleString();
+    }
+
+    // 업로드 주기 포맷팅 (숫자만 반환)
+    function formatUploadInterval(interval) {
+      if (interval === null) return '-';
+      return interval.toFixed(1);
+    }
+
+    // 평균 업로드 주기 히스토그램 생성
+    function generateUploadIntervalChart(channels, binSize = 3) {
+      // 평균 업로드 주기가 있는 채널만 필터링
+      const channelsWithInterval = channels.filter(c => c.averageUploadInterval !== null);
+      
+      if (channelsWithInterval.length === 0) {
+        return '<div class="text-gray-400 mt-8">그래프를 표시할 데이터가 없습니다.</div>';
+      }
+
+      // 히스토그램 데이터 생성
+      const intervals = channelsWithInterval.map(c => c.averageUploadInterval);
+      const minInterval = Math.min(...intervals);
+      const maxInterval = Math.max(...intervals);
+      
+      // Bin 생성 - 항상 0부터 시작
+      const bins = [];
+      const startBin = 0; // 항상 0부터 시작
+      const endBin = Math.ceil(maxInterval / binSize) * binSize; // binSize의 배수로 올림
+      
+      for (let i = startBin; i < endBin; i += binSize) {
+        const binEnd = i + binSize;
+        const count = intervals.filter(interval => interval >= i && interval < binEnd).length;
+        bins.push({
+          start: i,
+          end: binEnd,
+          count: count,
+          label: `${i}~${binEnd}`
+        });
+      }
+      
+      // 마지막 bin에 정확히 maxInterval이 포함되도록 처리
+      const lastBin = bins[bins.length - 1];
+      if (lastBin && maxInterval >= lastBin.end) {
+        // 마지막 bin을 확장
+        const extendedEnd = Math.ceil((maxInterval + 1) / binSize) * binSize;
+        lastBin.end = extendedEnd;
+        lastBin.label = `${lastBin.start}~${extendedEnd}`;
+      }
+
+      const maxCount = Math.max(...bins.map(b => b.count));
+      const chartHeight = 400;
+      const barWidth = Math.max(30, Math.min(80, (800 / bins.length) - 5));
+
+      let chartHtml = `
+        <div class="mt-8 bg-gray-800 rounded-lg p-6">
+          <h2 class="text-xl font-bold mb-4 text-white">평균 업로드 주기 분포 (히스토그램)</h2>
+          <div class="flex items-end gap-1 justify-center" style="height: ${chartHeight}px; overflow-x: auto;">
+      `;
+
+      bins.forEach((bin, index) => {
+        const height = maxCount > 0 ? (bin.count / maxCount) * (chartHeight - 80) : 0;
+        const barColor = `hsl(${200 + (index * 15) % 160}, 70%, 50%)`;
+        
+        chartHtml += `
+          <div class="flex flex-col items-center relative group" style="min-width: ${barWidth}px;">
+            <div 
+              class="bg-blue-500 hover:bg-blue-400 transition-colors rounded-t cursor-pointer relative"
+              style="width: ${barWidth}px; height: ${height}px; background-color: ${barColor}; min-height: ${height > 0 ? '4px' : '0'};"
+              title="${bin.label}: ${bin.count}개 채널"
+            >
+              <div class="absolute bottom-full mb-2 left-1/2 transform -translate-x-1/2 bg-gray-900 text-white text-xs px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap pointer-events-none z-10">
+                ${bin.label}: ${bin.count}개
+              </div>
+            </div>
+            <div class="mt-2 text-xs text-gray-400 text-center" style="writing-mode: horizontal-tb; transform: rotate(-45deg); transform-origin: center; width: ${barWidth * 1.5}px;">
+              ${bin.start}
+            </div>
+            ${bin.count > 0 ? `<div class="text-xs text-white font-semibold mt-1">${bin.count}</div>` : ''}
+          </div>
+        `;
+      });
+
+      chartHtml += `
+          </div>
+          <div class="mt-6 flex justify-between items-center">
+            <div class="text-sm text-gray-400">
+              총 ${channelsWithInterval.length}개 채널, Bin 크기: ${binSize}일
+            </div>
+            <div class="text-sm text-gray-400">
+              범위: ${minInterval.toFixed(1)} ~ ${maxInterval.toFixed(1)}일
+            </div>
+          </div>
+        </div>
+      `;
+
+      return chartHtml;
+    }
+
+    // CSV 다운로드 함수
+    function downloadCSV(channels) {
+      if (channels.length === 0) {
+        alert('다운로드할 데이터가 없습니다.');
+        return;
+      }
+
+      // CSV 헤더
+      const headers = ['채널 ID', '채널명', '구독자 수', '채널 링크', '마지막 업로드일', '평균 업로드 주기'];
+      
+      // CSV 데이터 생성
+      const csvRows = [headers.join(',')];
+
+      channels.forEach((channel) => {
+        const row = [
+          channel.id,
+          `"${channel.title.replace(/"/g, '""')}"`, // 쌍따옴표 이스케이프
+          channel.subscriberCount,
+          channel.channelLink,
+          channel.lastUploadDate ? formatDate(channel.lastUploadDate) : '-',
+          channel.averageUploadInterval !== null ? formatUploadInterval(channel.averageUploadInterval) : '-'
+        ];
+        csvRows.push(row.join(','));
+      });
+
+      // BOM 추가 (한글 깨짐 방지)
+      const csvContent = '\uFEFF' + csvRows.join('\n');
+      
+      // Blob 생성 및 다운로드
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement('a');
+      const url = URL.createObjectURL(blob);
+      
+      link.setAttribute('href', url);
+      link.setAttribute('download', `youtube_channels_${SEARCH_QUERY}_${new Date().toISOString().split('T')[0]}.csv`);
+      link.style.visibility = 'hidden';
+      
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }
+
+    // 결과 표시
+    function displayResults(channels) {
+      const resultsDiv = document.getElementById('results');
+      const downloadSection = document.getElementById('downloadSection');
+      
+      // 채널 데이터 저장
+      currentChannels = channels;
+      
+      if (channels.length === 0) {
+        resultsDiv.innerHTML = '<div class="text-gray-400">표시할 채널이 없습니다.</div>';
+        downloadSection.classList.add('hidden');
+        return;
+      }
+
+      // 다운로드 버튼 표시
+      downloadSection.classList.remove('hidden');
+
+      let html = `
+        <div class="mb-4 text-gray-400">
+          총 <span class="text-white font-semibold">${channels.length}</span>개의 채널을 찾았습니다.
+        </div>
+        <table class="w-full border-collapse bg-gray-800 rounded-lg overflow-hidden mb-8">
+          <thead>
+            <tr class="bg-gray-700 border-b border-gray-600">
+              <th class="px-6 py-4 text-left text-sm font-semibold text-gray-300">채널 ID</th>
+              <th class="px-6 py-4 text-left text-sm font-semibold text-gray-300">채널명</th>
+              <th class="px-6 py-4 text-left text-sm font-semibold text-gray-300">구독자 수</th>
+              <th class="px-6 py-4 text-left text-sm font-semibold text-gray-300">채널 링크</th>
+              <th class="px-6 py-4 text-left text-sm font-semibold text-gray-300">마지막 업로드일</th>
+              <th class="px-6 py-4 text-left text-sm font-semibold text-gray-300">평균 업로드 주기</th>
+            </tr>
+          </thead>
+          <tbody>
+      `;
+
+      channels.forEach((channel) => {
+        html += `
+          <tr class="border-b border-gray-700/50 hover:bg-gray-700/50 transition-colors">
+            <td class="px-6 py-4 text-sm text-gray-400 font-mono">${channel.id}</td>
+            <td class="px-6 py-4 text-sm text-white font-medium">${channel.title}</td>
+            <td class="px-6 py-4 text-sm text-gray-300">${formatSubscriberCount(channel.subscriberCount)}</td>
+            <td class="px-6 py-4 text-sm">
+              <a href="${channel.channelLink}" target="_blank" rel="noopener noreferrer" class="text-blue-400 hover:text-blue-300 underline">
+                채널 보기
+              </a>
+            </td>
+            <td class="px-6 py-4 text-sm text-gray-300">${formatDate(channel.lastUploadDate)}</td>
+            <td class="px-6 py-4 text-sm text-gray-300">${formatUploadInterval(channel.averageUploadInterval)}</td>
+          </tr>
+        `;
+      });
+
+      html += `
+          </tbody>
+        </table>
+      `;
+
+      // 그래프 추가
+      const binSize = parseInt(document.getElementById('binSize')?.value || '3', 10);
+      html += generateUploadIntervalChart(channels, binSize);
+
+      resultsDiv.innerHTML = html;
+      
+      // Bin 크기 변경 시 그래프 업데이트
+      const binSizeSelect = document.getElementById('binSize');
+      if (binSizeSelect) {
+        binSizeSelect.onchange = () => {
+          const newBinSize = parseInt(binSizeSelect.value, 10);
+          const newChart = generateUploadIntervalChart(channels, newBinSize);
+          const chartContainer = resultsDiv.querySelector('.bg-gray-800.rounded-lg.p-6:last-child');
+          if (chartContainer) {
+            chartContainer.outerHTML = newChart;
+          }
+        };
+      }
+    }
+
+    // 상태 업데이트
+    function updateStatus(message) {
+      document.getElementById('status').textContent = message;
+    }
+
+    function showError(message) {
+      const errorDiv = document.getElementById('error');
+      errorDiv.textContent = message;
+      errorDiv.classList.remove('hidden');
+    }
+
+    function hideError() {
+      document.getElementById('error').classList.add('hidden');
+    }
+
+    // 메인 분석 함수
+    async function analyzeChannels() {
+      const apiKey = document.getElementById('apiKey').value.trim();
+      const maxResultsInput = document.getElementById('maxResults').value;
+      const maxResults = Math.min(Math.max(parseInt(maxResultsInput) || MAX_SEARCH_RESULTS, 1), 500);
+      
+      if (!apiKey) {
+        showError('YouTube API Key를 입력해주세요.');
+        return;
+      }
+      
+      if (maxResults < 1 || maxResults > 500) {
+        showError('검색 개수는 1~500 사이여야 합니다.');
+        return;
+      }
+
+      const analyzeBtn = document.getElementById('analyzeBtn');
+      analyzeBtn.disabled = true;
+      analyzeBtn.textContent = '분석 중...';
+      hideError();
+      document.getElementById('results').innerHTML = '';
+      const downloadSection = document.getElementById('downloadSection');
+      downloadSection.classList.add('hidden');
+      // Bin 크기 선택 초기화
+      const binSizeSelect = document.getElementById('binSize');
+      if (binSizeSelect) {
+        binSizeSelect.value = '3';
+      }
+      currentChannels = [];
+
+      try {
+        // API 클라이언트 초기화
+        updateStatus('YouTube API 클라이언트 초기화 중...');
+        await loadClient(apiKey);
+
+        // 채널 검색
+        updateStatus(`검색어 "${SEARCH_QUERY}"로 채널 검색 중... (최대 ${maxResults}개)`);
+        const searchResults = await searchChannels(SEARCH_QUERY, maxResults);
+        const channelIds = searchResults.map((result) => result.id.channelId);
+
+        if (channelIds.length === 0) {
+          updateStatus('검색 결과가 없습니다.');
+          analyzeBtn.disabled = false;
+          analyzeBtn.textContent = '채널 분석 시작';
+          return;
+        }
+
+        console.log(`검색된 채널 ID 개수: ${channelIds.length}`);
+        updateStatus(`${channelIds.length}개의 채널을 찾았습니다. (검색 단계)`);
+
+        // 채널 상세 정보 조회
+        updateStatus('채널 상세 정보 조회 중...');
+        const channels = await getChannelsDetails(channelIds);
+        console.log(`상세 정보 조회 완료: ${channels.length}개 채널`);
+
+        // 구독자 수 필터링
+        updateStatus(`구독자 수 ${MIN_SUBSCRIBER_COUNT} 이상인 채널 필터링 중...`);
+        const filteredChannels = filterChannelsBySubscriberCount(channels, MIN_SUBSCRIBER_COUNT);
+        console.log(`필터링 결과: ${filteredChannels.length}개 채널 (검색: ${channelIds.length}개 → 상세조회: ${channels.length}개 → 필터링: ${filteredChannels.length}개)`);
+        updateStatus(`${filteredChannels.length}개의 채널이 기준을 만족합니다.`);
+
+        // 각 채널의 추가 정보 수집
+        updateStatus('채널별 상세 정보 수집 중...');
+        const channelInfos = [];
+
+        for (let i = 0; i < filteredChannels.length; i++) {
+          const channel = filteredChannels[i];
+          updateStatus(`[${i + 1}/${filteredChannels.length}] ${channel.snippet.title} 분석 중...`);
+          
+          try {
+            const channelInfo = await convertToChannelInfo(channel);
+            channelInfos.push(channelInfo);
+          } catch (error) {
+            console.error(`채널 ${channel.id} 분석 실패:`, error);
+          }
+
+          // API 할당량을 고려하여 약간의 지연 추가
+          if (i < filteredChannels.length - 1) {
+            await new Promise((resolve) => setTimeout(resolve, 100));
+          }
+        }
+
+        updateStatus(`분석 완료! 총 ${channelInfos.length}개의 채널 정보를 수집했습니다.`);
+        displayResults(channelInfos);
+
+      } catch (error) {
+        console.error('채널 분석 중 오류 발생:', error);
+        showError(error.message || '채널 분석 중 오류가 발생했습니다.');
+        updateStatus('오류가 발생했습니다.');
+      } finally {
+        analyzeBtn.disabled = false;
+        analyzeBtn.textContent = '채널 분석 시작';
+      }
+    }
+
+    // 이벤트 리스너 등록
+    document.getElementById('analyzeBtn').addEventListener('click', analyzeChannels);
+    document.getElementById('downloadBtn').addEventListener('click', () => {
+      downloadCSV(currentChannels);
+    });
+    
+    // Enter 키로도 실행 가능
+    document.getElementById('apiKey').addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') {
+        analyzeChannels();
+      }
+    });
+
+    // gapi 로드 대기
+    gapi.load('client', () => {
+      console.log('Google API loaded');
+    });
+  </script>
+</body>
+</html>

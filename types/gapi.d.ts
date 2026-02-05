@@ -12,10 +12,70 @@ declare namespace gapi {
         interface ListParams {
           part: string[];
           id?: string[];
+          maxResults?: number;
         }
 
         interface ListResponse {
-          result: any;
+          result: {
+            items: any[];
+            pageInfo?: {
+              totalResults: number;
+              resultsPerPage: number;
+            };
+          };
+        }
+
+        function list(params: ListParams): {
+          then<TResult1 = ListResponse, TResult2 = never>(
+            onfulfilled?: ((value: ListResponse) => TResult1 | PromiseLike<TResult1>) | undefined | null,
+            onrejected?: ((reason: any) => TResult2 | PromiseLike<TResult2>) | undefined | null
+          ): Promise<TResult1 | TResult2>;
+        };
+      }
+
+      namespace search {
+        interface ListParams {
+          part: string[];
+          q: string;
+          type: string;
+          maxResults?: number;
+          pageToken?: string;
+        }
+
+        interface ListResponse {
+          result: {
+            items: any[];
+            nextPageToken?: string;
+            pageInfo?: {
+              totalResults: number;
+              resultsPerPage: number;
+            };
+          };
+        }
+
+        function list(params: ListParams): {
+          then<TResult1 = ListResponse, TResult2 = never>(
+            onfulfilled?: ((value: ListResponse) => TResult1 | PromiseLike<TResult1>) | undefined | null,
+            onrejected?: ((reason: any) => TResult2 | PromiseLike<TResult2>) | undefined | null
+          ): Promise<TResult1 | TResult2>;
+        };
+      }
+
+      namespace playlistItems {
+        interface ListParams {
+          part: string[];
+          playlistId: string;
+          maxResults?: number;
+        }
+
+        interface ListResponse {
+          result: {
+            items: any[];
+            pageInfo?: {
+              totalResults: number;
+              resultsPerPage: number;
+            };
+          };
         }
 
         function list(params: ListParams): {

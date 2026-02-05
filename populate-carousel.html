@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Carousel 데이터 채우기</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <!-- 설정 파일 로드 (선택사항) -->
+  <script src="./config.js"></script>
+  <style>
+    body {
+      background-color: #0d1317;
+      color: white;
+    }
+  </style>
+</head>
+<body>
+  <div class="container mx-auto px-4 py-8 max-w-4xl">
+    <h1 class="text-3xl font-bold mb-4">Carousel 데이터 채우기</h1>
+    <p class="text-gray-400 mb-6">
+      YouTube API로 "부업" 검색어로 video를 검색하고, relevance 순으로 50개를 carousel 테이블에 삽입합니다.
+    </p>
+    
+    <div class="mb-6 space-y-4">
+      <div>
+        <label class="block text-sm font-medium mb-2">Supabase Project URL:</label>
+        <input 
+          type="text" 
+          id="supabaseUrl" 
+          placeholder="Supabase Project URL을 입력하세요"
+          class="w-full px-4 py-2 bg-gray-800 text-white rounded-lg border border-gray-700 focus:border-blue-500 focus:outline-none"
+        />
+      </div>
+      <div>
+        <label class="block text-sm font-medium mb-2">Supabase Anon Key:</label>
+        <input 
+          type="text" 
+          id="supabaseAnonKey" 
+          placeholder="Supabase Anon Key를 입력하세요"
+          class="w-full px-4 py-2 bg-gray-800 text-white rounded-lg border border-gray-700 focus:border-blue-500 focus:outline-none"
+        />
+      </div>
+      <div>
+        <label class="block text-sm font-medium mb-2">YouTube API Key:</label>
+        <input 
+          type="text" 
+          id="apiKey" 
+          placeholder="YouTube API Key를 입력하세요"
+          class="w-full px-4 py-2 bg-gray-800 text-white rounded-lg border border-gray-700 focus:border-blue-500 focus:outline-none"
+        />
+      </div>
+    </div>
+    
+    <div class="mb-6 p-3 bg-blue-500/20 border border-blue-500/50 rounded-lg text-blue-300 text-xs">
+      💡 팁: .env 파일의 값을 사용하려면 <code class="bg-gray-800 px-1 py-0.5 rounded">public/config.js</code> 파일을 수정하거나, 
+      위 입력 필드에 직접 입력하세요. Node.js 스크립트(<code class="bg-gray-800 px-1 py-0.5 rounded">npm run populate-carousel</code>)는 자동으로 .env를 읽습니다.
+    </div>
+    
+    <button 
+      id="populateBtn"
+      class="px-6 py-3 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors mb-6"
+    >
+      Carousel 데이터 채우기
+    </button>
+
+    <div id="status" class="mb-4 text-gray-400"></div>
+    <div id="error" class="mb-6 p-4 bg-red-500/20 border border-red-500/50 rounded-lg text-red-300 hidden"></div>
+    
+    <div class="mb-6 p-4 bg-yellow-500/20 border border-yellow-500/50 rounded-lg text-yellow-300 text-sm">
+      <p class="font-semibold mb-2">⚠️ 테이블이 없다는 오류가 발생하면:</p>
+      <ol class="list-decimal list-inside space-y-1 ml-2">
+        <li>Supabase 대시보드의 SQL Editor로 이동</li>
+        <li><code class="bg-gray-800 px-2 py-1 rounded">sql/create-carousel-table.sql</code> 파일의 내용을 실행</li>
+        <li>또는 테이블이 이미 있다면 <code class="bg-gray-800 px-2 py-1 rounded">sql/setup-rls-only.sql</code> 실행</li>
+      </ol>
+    </div>
+    
+    <div id="results" class="mt-6"></div>
+  </div>
+
+  <script type="module">
+    const SEARCH_QUERY = '부업';
+    const MAX_RESULTS = 50;
+
+    let supabase = null;
+
+    // Supabase 클라이언트 초기화
+    function initSupabase(url, anonKey) {
+      if (!url || !anonKey) {
+        throw new Error('Supabase URL과 Anon Key가 필요합니다.');
+      }
+      return window.supabase.createClient(url, anonKey);
+    }
+
+    // 상태 업데이트
+    function updateStatus(message) {
+      document.getElementById('status').textContent = message;
+    }
+
+    function showError(message) {
+      const errorDiv = document.getElementById('error');
+      errorDiv.textContent = message;
+      errorDiv.classList.remove('hidden');
+    }
+
+    function hideError() {
+      document.getElementById('error').classList.add('hidden');
+    }
+
+    function showResults(html) {
+      document.getElementById('results').innerHTML = html;
+    }
+
+    /**
+     * 테이블 존재 여부 확인
+     */
+    async function checkTableExists() {
+      const { error } = await supabase
+        .from('carousel')
+        .select('id')
+        .limit(1);
+
+      if (error) {
+        if (error.message.includes('schema cache') || error.message.includes('does not exist')) {
+          throw new Error(
+            '테이블이 존재하지 않습니다. Supabase 대시보드의 SQL Editor에서 ' +
+            'sql/create-carousel-table.sql 파일의 내용을 실행해주세요.'
+          );
+        }
+        throw error;
+      }
+    }
+
+    /**
+     * YouTube API로 video 검색
+     */
+    async function searchVideos(query, apiKey, maxResults = 50) {
+      const allResults = [];
+      let nextPageToken;
+
+      do {
+        const url = new URL('https://www.googleapis.com/youtube/v3/search');
+        url.searchParams.set('part', 'snippet');
+        url.searchParams.set('q', query);
+        url.searchParams.set('type', 'video');
+        url.searchParams.set('order', 'relevance');
+        url.searchParams.set('maxResults', Math.min(maxResults - allResults.length, 50).toString());
+        url.searchParams.set('key', apiKey);
+        if (nextPageToken) {
+          url.searchParams.set('pageToken', nextPageToken);
+        }
+
+        const response = await fetch(url.toString());
+        if (!response.ok) {
+          const error = await response.json();
+          throw new Error(`YouTube API Error: ${JSON.stringify(error)}`);
+        }
+
+        const data = await response.json();
+
+        if (data.items) {
+          allResults.push(...data.items);
+        }
+
+        nextPageToken = data.nextPageToken;
+      } while (nextPageToken && allResults.length < maxResults);
+
+      return allResults.slice(0, maxResults);
+    }
+
+    /**
+     * Supabase에 carousel 데이터 삽입
+     */
+    async function insertCarouselItems(videos) {
+      // 먼저 테이블 존재 여부 확인
+      await checkTableExists();
+
+      const carouselData = videos.map((video) => ({
+        video_id: video.id.videoId,
+        thumbnail: video.snippet.thumbnails.high?.url || video.snippet.thumbnails.default.url,
+        title: video.snippet.title,
+        channel_name: video.snippet.channelTitle,
+        published_at: video.snippet.publishedAt.split('T')[0], // YYYY-MM-DD 형식으로 변환
+      }));
+
+      // 중복 체크를 위해 기존 video_id 조회
+      const { data: existingData, error: selectError } = await supabase
+        .from('carousel')
+        .select('video_id')
+        .in('video_id', carouselData.map((item) => item.video_id));
+
+      if (selectError) {
+        throw new Error(`기존 데이터 조회 실패: ${selectError.message}`);
+      }
+
+      const existingIdsSet = new Set(
+        existingData?.map((item) => item.video_id) || []
+      );
+
+      // 중복되지 않는 항목만 필터링
+      const newItems = carouselData.filter((item) => !existingIdsSet.has(item.video_id));
+
+      if (newItems.length === 0) {
+        return { inserted: 0, skipped: carouselData.length, items: [] };
+      }
+
+      // 배치로 삽입
+      const batchSize = 50;
+      let insertedCount = 0;
+      const insertedItems = [];
+
+      for (let i = 0; i < newItems.length; i += batchSize) {
+        const batch = newItems.slice(i, i + batchSize);
+        const { data, error } = await supabase.from('carousel').insert(batch).select();
+
+        if (error) {
+          console.error(`배치 ${Math.floor(i / batchSize) + 1} 삽입 실패:`, error);
+          throw new Error(`배치 삽입 실패: ${error.message}`);
+        } else {
+          insertedCount += batch.length;
+          insertedItems.push(...(data || []));
+          updateStatus(`배치 ${Math.floor(i / batchSize) + 1}: ${batch.length}개 항목 삽입 완료...`);
+        }
+      }
+
+      return {
+        inserted: insertedCount,
+        skipped: carouselData.length - newItems.length,
+        items: insertedItems,
+      };
+    }
+
+    /**
+     * 결과 표시
+     */
+    function displayResults(result) {
+      let html = `
+        <div class="bg-gray-800 rounded-lg p-6">
+          <h2 class="text-xl font-bold mb-4 text-white">결과</h2>
+          <div class="space-y-2 text-gray-300">
+            <p>✅ 삽입된 항목: <span class="text-white font-semibold">${result.inserted}개</span></p>
+            <p>⏭️ 건너뛴 항목 (중복): <span class="text-white font-semibold">${result.skipped}개</span></p>
+          </div>
+      `;
+
+      if (result.items.length > 0) {
+        html += `
+          <div class="mt-6">
+            <h3 class="text-lg font-semibold mb-3 text-white">삽입된 항목 목록:</h3>
+            <div class="space-y-2 max-h-96 overflow-y-auto">
+        `;
+
+        result.items.forEach((item, index) => {
+          html += `
+            <div class="bg-gray-700/50 rounded p-3 text-sm">
+              <div class="flex items-start gap-3">
+                <img src="${item.thumbnail}" alt="${item.title}" class="w-24 h-16 object-cover rounded" />
+                <div class="flex-1">
+                  <p class="text-white font-medium mb-1 line-clamp-2">${item.title}</p>
+                  <p class="text-gray-400 text-xs">${item.channel_name} • ${item.published_at}</p>
+                </div>
+              </div>
+            </div>
+          `;
+        });
+
+        html += `
+            </div>
+          </div>
+        `;
+      }
+
+      html += `</div>`;
+      showResults(html);
+    }
+
+    /**
+     * 메인 함수
+     */
+    async function populateCarousel() {
+      const supabaseUrl = document.getElementById('supabaseUrl').value.trim();
+      const supabaseAnonKey = document.getElementById('supabaseAnonKey').value.trim();
+      const apiKey = document.getElementById('apiKey').value.trim();
+
+      if (!supabaseUrl || !supabaseAnonKey) {
+        showError('Supabase URL과 Anon Key를 입력해주세요.');
+        return;
+      }
+
+      if (!apiKey) {
+        showError('YouTube API Key를 입력해주세요.');
+        return;
+      }
+
+      // Supabase 클라이언트 초기화
+      try {
+        supabase = initSupabase(supabaseUrl, supabaseAnonKey);
+      } catch (error) {
+        showError(`Supabase 초기화 실패: ${error.message}`);
+        return;
+      }
+
+      const populateBtn = document.getElementById('populateBtn');
+      populateBtn.disabled = true;
+      populateBtn.textContent = '처리 중...';
+      hideError();
+      document.getElementById('results').innerHTML = '';
+
+      try {
+        updateStatus(`검색어 "${SEARCH_QUERY}"로 YouTube video 검색 중... (최대 ${MAX_RESULTS}개)`);
+        const videos = await searchVideos(SEARCH_QUERY, apiKey, MAX_RESULTS);
+        updateStatus(`✅ ${videos.length}개의 video를 찾았습니다.`);
+
+        updateStatus('carousel 테이블에 데이터 삽입 중...');
+        const result = await insertCarouselItems(videos);
+
+        updateStatus(`✅ 완료! ${result.inserted}개 항목 삽입, ${result.skipped}개 항목 건너뜀`);
+        displayResults(result);
+
+      } catch (error) {
+        console.error('오류 발생:', error);
+        showError(error.message || '오류가 발생했습니다.');
+        updateStatus('오류가 발생했습니다.');
+      } finally {
+        populateBtn.disabled = false;
+        populateBtn.textContent = 'Carousel 데이터 채우기';
+      }
+    }
+
+    // 페이지 로드 시 config.js의 값으로 입력 필드 채우기
+    window.addEventListener('DOMContentLoaded', () => {
+      if (window.CAROUSEL_CONFIG) {
+        const config = window.CAROUSEL_CONFIG;
+        if (config.SUPABASE_URL) {
+          document.getElementById('supabaseUrl').value = config.SUPABASE_URL;
+        }
+        if (config.SUPABASE_ANON_KEY) {
+          document.getElementById('supabaseAnonKey').value = config.SUPABASE_ANON_KEY;
+        }
+        if (config.YOUTUBE_API_KEY) {
+          document.getElementById('apiKey').value = config.YOUTUBE_API_KEY;
+        }
+      }
+    });
+
+    // 이벤트 리스너 등록
+    document.getElementById('populateBtn').addEventListener('click', populateCarousel);
+    
+    // Enter 키로도 실행 가능
+    document.getElementById('apiKey').addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') {
+        populateCarousel();
+      }
+    });
+  </script>
+</body>
+</html>
