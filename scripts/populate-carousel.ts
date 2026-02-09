@@ -107,15 +107,89 @@ async function searchVideos(query: string, maxResults: number = 50): Promise<You
 }
 
 /**
+ * ISO 8601 duration 형식을 초 단위로 변환 (예: PT1M30S -> 90)
+ */
+function parseDuration(duration: string): number {
+  const match = duration.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
+  if (!match) return 0;
+  
+  const hours = parseInt(match[1] || '0', 10);
+  const minutes = parseInt(match[2] || '0', 10);
+  const seconds = parseInt(match[3] || '0', 10);
+  
+  return hours * 3600 + minutes * 60 + seconds;
+}
+
+interface VideoDetail {
+  hasCaptions: boolean;
+  duration: number; // 초 단위
+}
+
+/**
+ * YouTube API로 video 상세 정보 조회 (자막 정보 및 duration 포함)
+ */
+async function getVideoDetails(videoIds: string[]): Promise<Record<string, VideoDetail>> {
+  const videoDetailsMap: Record<string, VideoDetail> = {};
+  const batchSize = 50; // YouTube API는 한 번에 최대 50개까지 조회 가능
+
+  for (let i = 0; i < videoIds.length; i += batchSize) {
+    const batch = videoIds.slice(i, i + batchSize);
+    const url = new URL('https://www.googleapis.com/youtube/v3/videos');
+    url.searchParams.set('part', 'contentDetails');
+    url.searchParams.set('id', batch.join(','));
+    url.searchParams.set('key', YOUTUBE_API_KEY!);
+
+    const response = await fetch(url.toString());
+    if (!response.ok) {
+      const error = await response.json();
+      console.warn(`⚠️ Video 상세 정보 조회 실패: ${JSON.stringify(error)}`);
+      continue;
+    }
+
+    const data = await response.json();
+    if (data.items) {
+      data.items.forEach((item: any) => {
+        const duration = parseDuration(item.contentDetails?.duration || 'PT0S');
+        videoDetailsMap[item.id] = {
+          hasCaptions: item.contentDetails?.caption === 'true',
+          duration: duration,
+        };
+      });
+    }
+  }
+
+  return videoDetailsMap;
+}
+
+/**
  * Supabase에 carousel 데이터 삽입
  */
 async function insertCarouselItems(videos: YouTubeVideoSearchResult[]): Promise<void> {
-  const carouselData = videos.map((video) => ({
+  // 자막 정보 및 duration 가져오기
+  console.log('📹 Video 상세 정보 조회 중 (자막 정보 및 duration 포함)...');
+  const videoIds = videos.map((v) => v.id.videoId);
+  const videoDetailsMap = await getVideoDetails(videoIds);
+
+  // 3분(180초) 이하인 영상 필터링 (Shorts 제외)
+  const MAX_DURATION_SECONDS = 180; // 3분
+  const filteredVideos = videos.filter((video) => {
+    const details = videoDetailsMap[video.id.videoId];
+    if (!details) {
+      // duration 정보를 가져오지 못한 경우 포함하지 않음
+      return false;
+    }
+    return details.duration > MAX_DURATION_SECONDS;
+  });
+
+  console.log(`📊 ${videos.length}개 중 ${filteredVideos.length}개 영상이 3분 초과 (Shorts 제외됨: ${videos.length - filteredVideos.length}개)`);
+
+  const carouselData = filteredVideos.map((video) => ({
     video_id: video.id.videoId,
     thumbnail: video.snippet.thumbnails.high?.url || video.snippet.thumbnails.default.url,
     title: video.snippet.title,
     channel_name: video.snippet.channelTitle,
     published_at: video.snippet.publishedAt.split('T')[0], // YYYY-MM-DD 형식으로 변환
+    has_captions: videoDetailsMap[video.id.videoId]?.hasCaptions || false, // 자막 유무
   }));
 
   // 중복 체크를 위해 기존 video_id 조회

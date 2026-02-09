@@ -28,6 +28,7 @@ const InfiniteCarousel: React.FC = () => {
             title: row.title,
             channel_name: row.channel_name,
             published_at: row.published_at,
+            has_captions: row.has_captions,
           }));
           setItems(carouselItems);
         }
@@ -112,9 +113,9 @@ const InfiniteCarousel: React.FC = () => {
         <div className="absolute right-0 top-0 bottom-0 w-32 bg-gradient-to-l from-background to-transparent z-10 hidden lg:block" />
 
         <div 
-          className="flex w-max gap-6 px-6"
+          className="flex animate-infinite-scroll w-max gap-6 px-6"
           style={{
-            animation: `infinite-scroll ${animationDuration}s linear infinite`,
+            animationDuration: `${animationDuration}s`,
           }}
         >
           {tripledItems.map((item, idx) => (

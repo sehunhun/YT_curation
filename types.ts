@@ -6,6 +6,7 @@ export interface CarouselItem {
   title: string;
   channel_name: string;
   published_at: string;
+  has_captions: boolean;
 }
 
 export interface NavLink {
