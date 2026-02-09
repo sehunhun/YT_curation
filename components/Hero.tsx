@@ -32,7 +32,13 @@ const Hero: React.FC = () => {
 
       {/* Hero Text */}
       <h1 className="text-4xl md:text-6xl lg:text-7xl font-extralight leading-[1.1] mb-8 tracking-tight text-white/90">
-        You don't need more time. You need better information. <span className="font-bold text-primary inline-block">선별된 부업 강의 영상</span>을 매일 받아보세요. 더 빠르게 배우고, 더 빨리 수익화 하세요.
+        You don't need more time.
+        <br />
+        You need better information.
+        <br />
+        <span className="font-bold text-primary inline-block">선별된 부업 강의 영상</span>을 매일 받아보세요.
+        <br />
+        더 빠르게 배우고, 더 빨리 수익화 하세요.
       </h1>
 
       {/* 통계 섹션 */}
