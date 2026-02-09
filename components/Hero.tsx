@@ -32,19 +32,8 @@ const Hero: React.FC = () => {
 
       {/* Hero Text */}
       <h1 className="text-4xl md:text-6xl lg:text-7xl font-extralight leading-[1.1] mb-8 tracking-tight text-white/90">
-        YouTube 영상을 더 스마트하게 소비하세요.
-        <br />
-        <span className="font-bold text-primary inline-block">AI가 선별한 핵심 인사이트</span>를
-        매일 받아보세요.
-        <br />
-        <span className="block mt-2">
-          시간을 절약하고, 더 나은 콘텐츠를 발견하세요.
-        </span>
+        You don't need more time. You need better information. <span className="font-bold text-primary inline-block">선별된 부업 강의 영상</span>을 매일 받아보세요. 더 빠르게 배우고, 더 빨리 수익화 하세요.
       </h1>
-
-      <p className="text-gray-400 text-lg md:text-xl font-light max-w-2xl leading-relaxed mb-12">
-        관심 있는 채널의 영상을 자동으로 요약하고 큐레이션해드립니다.
-      </p>
 
       {/* 통계 섹션 */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-8 md:gap-12 w-full max-w-4xl">
