@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { supabase, CarouselRow } from '../utils/supabase';
+import { supabase, ContentsRow } from '../utils/supabase';
 import { CarouselItem } from '../types';
 
 const InfiniteCarousel: React.FC = () => {
@@ -10,30 +10,39 @@ const InfiniteCarousel: React.FC = () => {
     const fetchCarouselItems = async () => {
       try {
         const { data, error } = await supabase
-          .from('carousel')
+          .from('contents')
           .select('*')
           .order('created_at', { ascending: false })
           .limit(50);
 
         if (error) {
-          console.error('Error fetching carousel items:', error);
+          console.error('Error fetching contents items:', error);
           return;
         }
 
         if (data) {
-          const carouselItems: CarouselItem[] = data.map((row: CarouselRow) => ({
-            id: row.id.toString(),
-            video_id: row.video_id,
-            thumbnail: row.thumbnail,
-            title: row.title,
-            channel_name: row.channel_name,
-            published_at: row.published_at,
-            has_captions: row.has_captions,
-          }));
+          const carouselItems: CarouselItem[] = data.map((row: ContentsRow) => {
+            // video_thumbnail이 없으면 YouTube 표준 썸네일 URL 생성
+            const thumbnail = row.video_thumbnail || 
+              `https://img.youtube.com/vi/${row.video_id}/hqdefault.jpg`;
+            
+            // case_name이 없으면 기본값 사용
+            const title = row.case_name || '제목 없음';
+            
+            return {
+              id: row.id?.toString() || row.video_id,
+              video_id: row.video_id,
+              thumbnail: thumbnail,
+              title: title,
+              channel_name: row.channel_name,
+              published_at: row.published_date, // published_date를 published_at으로 매핑
+              has_captions: false, // contents 테이블에는 has_captions 필드가 없으므로 기본값 false
+            };
+          });
           setItems(carouselItems);
         }
       } catch (error) {
-        console.error('Error fetching carousel items:', error);
+        console.error('Error fetching contents items:', error);
       } finally {
         setLoading(false);
       }

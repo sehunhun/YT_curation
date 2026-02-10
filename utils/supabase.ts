@@ -19,3 +19,21 @@ export interface CarouselRow {
   has_captions: boolean;
   created_at: string;
 }
+
+export interface ContentsRow {
+  id?: number;
+  video_id: string;
+  published_date: string;
+  channel_name: string;
+  channel_url?: string;
+  case_name: string | null;
+  video_thumbnail?: string | null;
+  created_at: string;
+  // 기타 필드들 (선택적)
+  age?: string | null;
+  job?: string | null;
+  tool?: string | null;
+  revenue_model?: string | null;
+  revenue_per_unit?: string | null;
+  category?: string | null;
+}
