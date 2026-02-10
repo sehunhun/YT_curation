@@ -65,7 +65,7 @@ const InfiniteCarousel: React.FC = () => {
   const tripledItems = [...items, ...items, ...items];
 
   // 카드 하나당 시간을 고정하여 카드 개수에 비례하게 애니메이션 시간 계산
-  const TIME_PER_CARD = 0.5; // 카드 1개당 0.5초
+  const TIME_PER_CARD = 1.5; // 카드 1개당 1.5초 (기존 0.5초의 3배)
   // -50% 이동 = 원본 items의 1.5배 이동
   // 원본 1세트 시간 = items.length * TIME_PER_CARD
   // -50% 이동 시간 = 원본 1세트 시간 * 1.5
